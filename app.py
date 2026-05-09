@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from supabase import create_client
 from pymongo import MongoClient
+from sqlalchemy import create_engine
 from datetime import date
 
 # =========================
@@ -16,39 +16,52 @@ st.set_page_config(
 st.title("Panel Cloud de Citas Medicas")
 st.caption(
     "Prototipo academico con datos simulados. "
-    "Integra citas y resumen clinico desde Supabase, y notas clinicas desde MongoDB Atlas."
+    "Integra citas y resumen clinico desde Supabase PostgreSQL, "
+    "y notas clinicas desde MongoDB Atlas."
 )
 
 # =========================
 # Secrets
 # =========================
-SUPABASE_URL = st.secrets["SUPABASE_URL"]
-SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+SUPABASE_DB_URL = st.secrets["SUPABASE_DB_URL"]
 MONGO_URI = st.secrets["MONGO_URI"]
 
 # =========================
-# Conexion a servicios cloud
-# =========================
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-mongo_client = MongoClient(MONGO_URI)
-mongo_db = mongo_client["health_cloud"]
-notes_collection = mongo_db["clinical_notes"]
-
-# =========================
-# Cargar datos desde Supabase
+# Conexion a Supabase PostgreSQL
 # =========================
 try:
-    appointments_response = supabase.table("appointments").select("*").execute()
-    patients_response = supabase.table("patients").select("*").execute()
-    summary_response = supabase.table("clinical_summary").select("*").execute()
+    engine = create_engine(SUPABASE_DB_URL)
 
-    appointments = pd.DataFrame(appointments_response.data)
-    patients = pd.DataFrame(patients_response.data)
-    clinical_summary = pd.DataFrame(summary_response.data)
+    appointments = pd.read_sql_query(
+        "select * from appointments;",
+        engine
+    )
+
+    patients = pd.read_sql_query(
+        "select * from patients;",
+        engine
+    )
+
+    clinical_summary = pd.read_sql_query(
+        "select * from clinical_summary;",
+        engine
+    )
 
 except Exception as e:
-    st.error("Error al conectar con Supabase.")
+    st.error("Error al conectar con Supabase PostgreSQL.")
+    st.exception(e)
+    st.stop()
+
+# =========================
+# Conexion a MongoDB Atlas
+# =========================
+try:
+    mongo_client = MongoClient(MONGO_URI)
+    mongo_db = mongo_client["health_cloud"]
+    notes_collection = mongo_db["clinical_notes"]
+
+except Exception as e:
+    st.error("Error al conectar con MongoDB Atlas.")
     st.exception(e)
     st.stop()
 
@@ -57,7 +70,7 @@ if appointments.empty or patients.empty:
     st.stop()
 
 # =========================
-# Filtro de citas de hoy
+# Citas programadas
 # =========================
 st.subheader("Citas programadas")
 
@@ -75,7 +88,10 @@ appointments_today = appointments[
 ].copy()
 
 if appointments_today.empty:
-    st.info("No hay citas para la fecha seleccionada. Se mostraran todas las citas registradas para fines de demostracion.")
+    st.info(
+        "No hay citas para la fecha seleccionada. "
+        "Se mostraran todas las citas registradas para fines de demostracion."
+    )
     appointments_today = appointments.copy()
 
 appointments_today["appointment_label"] = (
@@ -147,7 +163,7 @@ st.dataframe(patient_view, use_container_width=True)
 # =========================
 # Resumen clinico desde Supabase
 # =========================
-st.subheader("Resumen clinico estructurado")
+st.subheader("Resumen clinico estructurado desde Supabase")
 
 patient_summary = clinical_summary[
     clinical_summary["patient_code"] == patient_code
@@ -197,7 +213,7 @@ try:
         st.info("No hay notas clinicas externas registradas para este paciente.")
 
 except Exception as e:
-    st.error("Error al conectar con MongoDB Atlas.")
+    st.error("Error al leer notas clinicas desde MongoDB Atlas.")
     st.exception(e)
 
 # =========================
@@ -237,12 +253,12 @@ st.markdown("""
 **Servicios cloud utilizados:**
 
 - **Streamlit Cloud:** despliegue publico de la aplicacion web.
-- **Supabase:** almacenamiento de datos estructurados como pacientes, citas y resumen clinico.
+- **Supabase PostgreSQL:** almacenamiento de datos estructurados como pacientes, citas y resumen clinico.
 - **MongoDB Atlas:** almacenamiento de notas clinicas semiestructuradas provenientes de plataformas externas simuladas.
 
 **Flujo del sistema:**
 
-`Profesional de salud -> Streamlit Cloud -> Cita programada -> Supabase -> Paciente asociado -> MongoDB Atlas -> Notas clinicas externas -> Dashboard`
+`Profesional de salud -> Streamlit Cloud -> Cita programada -> Supabase PostgreSQL -> Paciente asociado -> MongoDB Atlas -> Notas clinicas externas -> Dashboard`
 """)
 
 st.code("""
@@ -256,7 +272,7 @@ App web publica
 [Seleccion de cita programada]
         |
         v
-[Supabase]
+[Supabase PostgreSQL]
 Pacientes | Citas | Resumen clinico
         |
         v

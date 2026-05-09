@@ -1,6 +1,7 @@
 streamlit
 pandas
 plotly
-supabase
 pymongo
 dnspython
+sqlalchemy
+psycopg2-binary
